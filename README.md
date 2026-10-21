@@ -1,55 +1,39 @@
 # Job Notification Aggregator (RRB and BHEL)
 
-A Python script that checks several government recruitment pages, finds new notifications, and emails me a PDF summary every Sunday morning. I built it to save my brother from checking these sites by hand, and it now runs on its own through GitHub Actions.
+A Python pipeline that checks government recruitment pages every week, finds newly posted notifications, and emails me a PDF summary. It runs entirely on GitHub Actions, so nothing needs to be running on my own machine.
+
+## Why it uses a proxy
+
+My first version worked locally but failed once it ran on GitHub's servers. Some of these government sites block traffic from foreign data centers, and GitHub's runners fall into that category. To get around this, requests go through ScraperAPI, which routes them via Indian proxy servers. After that change, the pages loaded normally from the cloud.
 
 ## What it does
 
-- Scrapes five pages: RRB Chennai, RRB Central, and the BHEL Trichy, Ranipet and Central career pages.
-- Looks for links containing keywords like `CEN`, `Notice` and `.pdf` anywhere on the page, instead of relying on a fixed table layout. These sites change their markup often, and this approach has held up better than selecting specific table rows.
-- Cleans messy text and very long URLs with pandas and `textwrap`, so the PDF generator doesn't break on them.
-- Compares what it finds against `all_job_notifications.csv` and keeps only listings I haven't seen before.
-- Sorts new listings by location priority and builds a PDF report with `fpdf2`.
-- Emails the report as an attachment with an HTML body.
+- Checks five pages: RRB Chennai, RRB overall, BHEL Trichy, BHEL Ranipet and BHEL overall.
+- Parses each page with BeautifulSoup and picks out links containing keywords such as `cen`, `recruitment` and `syllabus`.
+- Keeps a CSV file of every notification it has already seen, so each email contains only new postings and not repeats.
+- Builds a PDF of the new listings with `fpdf2`.
+- Sends the PDF as an email attachment over SMTP, with an HTML message body.
 
 ## How a run works
 
-1. A GitHub Actions cron job starts the workflow every Sunday at 9:00 AM IST.
-2. The script fetches each of the five pages. SSL certificate mismatches on some of these sites are ignored so the fetch doesn't fail.
-3. New links are identified by checking against the saved CSV history.
-4. The new listings are written to a PDF, ordered by priority.
-5. The email is sent using credentials stored as GitHub secrets, and the job shuts down.
-
-Nothing runs on my own machine.
+1. A GitHub Actions cron job starts the workflow once a week.
+2. The script fetches each of the five pages through ScraperAPI.
+3. Extracted links are compared against the saved CSV history.
+4. New items are written to a PDF.
+5. The email is sent using credentials stored as GitHub secrets, and the runner shuts down.
 
 ## Tech stack
 
 - Python 3.10
-- requests, BeautifulSoup4, pandas
-- fpdf2, textwrap
-- GitHub Actions, smtplib, email.message
+- requests, BeautifulSoup4, pandas, fpdf2, smtplib
+- GitHub Actions (Ubuntu runners)
+- ScraperAPI for proxying and geo-unblocking
 
-## Running it locally
+## Configuration
 
-1. Clone the repository.
-2. Install the dependencies:
-
-```bash
-   pip install requests beautifulsoup4 pandas fpdf2 python-dotenv
-```
-
-3. Create a `.env` file in the project root:
-
-```text
-   EMAIL_SENDER=your_email@gmail.com
-   EMAIL_APP_PASSWORD=your_16_digit_app_password
-   EMAIL_RECEIVERS=target_email@gmail.com
-```
-
-   Use a Gmail app password, not your normal account password.
-
-4. Run the main script.
+The ScraperAPI key and email credentials are stored as GitHub secrets and read as environment variables. None of them are committed to the repository.
 
 ## Known limitations
 
-- The scraper depends on keyword matching, so a notice with an unusual title could be missed.
-- Ignoring SSL verification is a workaround for these specific sites and should not be copied to other projects.
+- Keyword matching can miss a notice with an unusual title.
+- The proxy service has a usage limit on its plan, so it needs to be checked if the page count grows.
