@@ -20,6 +20,11 @@ EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
 EMAIL_RECEIVERS = [e.strip() for e in os.getenv("EMAIL_RECEIVERS", "").split(",") if e.strip()]
 SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY") # ScraperAPI key for geo-unblocking
+print("--- DEBUG INFO ---")
+print(f"SENDER loaded: {bool(EMAIL_SENDER)}")
+print(f"PASSWORD loaded: {bool(EMAIL_APP_PASSWORD)}")
+print(f"RECEIVERS loaded: {bool(EMAIL_RECEIVERS)}")
+print("------------------")
 
 # The target list with priority ranking
 TARGETS = [
