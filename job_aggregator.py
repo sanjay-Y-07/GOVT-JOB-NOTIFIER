@@ -14,16 +14,28 @@ from dotenv import load_dotenv
 # Suppress SSL warnings for government websites
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Load credentials from .env
+# Load local .env file if running locally on your laptop
 load_dotenv()
+
+# Unpack the combined cloud EMAIL secret
+cloud_email_secret = os.getenv("EMAIL")
+if cloud_email_secret:
+    for line in cloud_email_secret.splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            os.environ[key.strip()] = value.strip()
+
+# Fetch the securely unpacked variables
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
 EMAIL_RECEIVERS = [e.strip() for e in os.getenv("EMAIL_RECEIVERS", "").split(",") if e.strip()]
-SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY") # ScraperAPI key for geo-unblocking
+SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY") 
+
 print("--- DEBUG INFO ---")
 print(f"SENDER loaded: {bool(EMAIL_SENDER)}")
 print(f"PASSWORD loaded: {bool(EMAIL_APP_PASSWORD)}")
 print(f"RECEIVERS loaded: {bool(EMAIL_RECEIVERS)}")
+print(f"PROXY loaded: {bool(SCRAPER_API_KEY)}")
 print("------------------")
 
 # The target list with priority ranking
@@ -43,8 +55,8 @@ def smart_scrape(source):
         # If running in the cloud, route through the proxy using an Indian IP
         if SCRAPER_API_KEY:
             proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={source['url']}&country_code=in"
-            response = requests.get(proxy_url, timeout=60) # Proxies take a bit longer to route
-        # If running locally on your laptop, use direct Wi-Fi
+            response = requests.get(proxy_url, timeout=60) 
+        # If running locally, use direct Wi-Fi
         else:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             response = requests.get(source['url'], headers=headers, timeout=15, verify=False)
@@ -76,7 +88,6 @@ def gather_data():
     csv_file = "all_job_notifications.csv"
     existing_links = set()
     
-    # Load existing links so we don't spam duplicate emails
     if os.path.exists(csv_file):
         try:
             existing_df = pd.read_csv(csv_file)
@@ -94,9 +105,8 @@ def gather_data():
                 existing_links.add(job['link'])
 
     if not all_new_jobs:
-        return pd.DataFrame() # Returns empty if no new jobs are found
+        return pd.DataFrame() 
 
-    # Convert to DataFrame, sort by priority, and save to CSV
     new_jobs_df = pd.DataFrame(all_new_jobs)
     new_jobs_df = new_jobs_df.sort_values(by="priority")
     new_jobs_df.to_csv(csv_file, mode='a', header=not os.path.exists(csv_file), index=False)

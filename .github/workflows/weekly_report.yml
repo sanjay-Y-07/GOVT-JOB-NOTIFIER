@@ -25,9 +25,7 @@ jobs:
 
     - name: Run Job Aggregator
       env:
-        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-        EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
-        EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
+        EMAIL: ${{ secrets.EMAIL }}
         SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
       run: |
         python job_aggregator.py
