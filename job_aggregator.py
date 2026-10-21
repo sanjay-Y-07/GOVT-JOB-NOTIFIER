@@ -19,6 +19,7 @@ load_dotenv()
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
 EMAIL_RECEIVERS = [e.strip() for e in os.getenv("EMAIL_RECEIVERS", "").split(",") if e.strip()]
+SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY") # ScraperAPI key for geo-unblocking
 
 # The target list with priority ranking
 TARGETS = [
@@ -34,8 +35,15 @@ def smart_scrape(source):
     print(f"Scanning {source['name']}...")
     data = []
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        response = requests.get(source['url'], headers=headers, timeout=15, verify=False)
+        # If running in the cloud, route through the proxy using an Indian IP
+        if SCRAPER_API_KEY:
+            proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={source['url']}&country_code=in"
+            response = requests.get(proxy_url, timeout=60) # Proxies take a bit longer to route
+        # If running locally on your laptop, use direct Wi-Fi
+        else:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            response = requests.get(source['url'], headers=headers, timeout=15, verify=False)
+            
         soup = BeautifulSoup(response.text, "html.parser")
         
         keywords = ["cen", ".pdf", "notice", "recruitment", "advertisement", "career", "job", "syllabus", "results"]
@@ -56,34 +64,41 @@ def smart_scrape(source):
     except Exception as e:
         print(f"Failed to scrape {source['name']}: {e}")
         
-    return data[:3] # Keep top 3 per site
+    return data[:3]
 
+# ---- 2. DATA AGGREGATION & CSV LOGIC ----
 def gather_data():
-    all_jobs = []
-    for target in TARGETS:
-        all_jobs.extend(smart_scrape(target))
-        time.sleep(2)
-        
-    if not all_jobs:
-        return pd.DataFrame()
-        
-    all_jobs = sorted(all_jobs, key=lambda x: x['priority'])
-    df = pd.DataFrame(all_jobs)
-    
     csv_file = "all_job_notifications.csv"
+    existing_links = set()
+    
+    # Load existing links so we don't spam duplicate emails
     if os.path.exists(csv_file):
-        old_df = pd.read_csv(csv_file)
-        old_links = old_df['link'].tolist()
-        new_jobs = df[~df['link'].isin(old_links)]
-        
-        if not new_jobs.empty:
-            pd.concat([old_df, new_jobs], ignore_index=True).to_csv(csv_file, index=False)
-    else:
-        df.to_csv(csv_file, index=False)
-        
-    return df
+        try:
+            existing_df = pd.read_csv(csv_file)
+            if 'link' in existing_df.columns:
+                existing_links = set(existing_df['link'].tolist())
+        except Exception:
+            pass
 
-# ---- 2. PDF GENERATION LOGIC ----
+    all_new_jobs = []
+    for target in TARGETS:
+        scraped_jobs = smart_scrape(target)
+        for job in scraped_jobs:
+            if job['link'] not in existing_links:
+                all_new_jobs.append(job)
+                existing_links.add(job['link'])
+
+    if not all_new_jobs:
+        return pd.DataFrame() # Returns empty if no new jobs are found
+
+    # Convert to DataFrame, sort by priority, and save to CSV
+    new_jobs_df = pd.DataFrame(all_new_jobs)
+    new_jobs_df = new_jobs_df.sort_values(by="priority")
+    new_jobs_df.to_csv(csv_file, mode='a', header=not os.path.exists(csv_file), index=False)
+    
+    return new_jobs_df
+
+# ---- 3. PDF GENERATION LOGIC ----
 class PDF(FPDF):
     def header(self):
         self.set_font("helvetica", "B", 16)
@@ -127,7 +142,7 @@ def generate_pdf(df, output_pdf):
     pdf.output(output_pdf)
     return True
 
-# ---- 3. PROFESSIONAL HTML EMAIL LOGIC ----
+# ---- 4. PROFESSIONAL HTML EMAIL LOGIC ----
 def send_professional_email(pdf_filename, total_jobs):
     if not (EMAIL_SENDER and EMAIL_APP_PASSWORD and EMAIL_RECEIVERS):
         print("Email settings missing in .env. Skipping email.")
@@ -138,7 +153,6 @@ def send_professional_email(pdf_filename, total_jobs):
     msg["From"] = EMAIL_SENDER
     msg["To"] = EMAIL_SENDER 
 
-    # Professional HTML Email Body tailored for Roshan
     html_content = f"""
     <html>
       <body style="font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: auto;">
@@ -175,7 +189,7 @@ def send_professional_email(pdf_filename, total_jobs):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
-# ---- 4. MAIN EXECUTION ----
+# ---- 5. MAIN EXECUTION ----
 if __name__ == "__main__":
     print("Starting Job Aggregation Engine...")
     jobs_df = gather_data()
